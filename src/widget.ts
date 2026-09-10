@@ -1,4 +1,4 @@
-import { setIcon } from "obsidian";
+import { parseYaml, setIcon, stringifyYaml } from "obsidian";
 import { isPlainObject } from "./detect";
 import {
 	addArrayItem,
@@ -7,12 +7,27 @@ import {
 	cloneValue,
 	getAtPath,
 	removeAtPath,
+	renameKey,
 	setAtPath,
 	type Leaf,
 	type Path,
 } from "./edit-ops";
 
 export type CommitFn = (value: unknown) => void;
+
+// "tree" draws one row per key; "yaml" hands the whole value over as text.
+// Text editing is the escape hatch for shapes the row editor is clumsy at —
+// reordering keys, pasting a block in from elsewhere.
+export type EditorMode = "tree" | "yaml";
+
+export interface NestedEditorOptions {
+	mode: EditorMode;
+	// When set, the editor draws a mode switch and reports the user's choice
+	// so the caller can remember it.
+	onModeChange?: (mode: EditorMode) => void;
+}
+
+const DEFAULT_OPTIONS: NestedEditorOptions = { mode: "tree" };
 
 // Handlers must read and write through these, never through render-time
 // snapshots: Obsidian does not re-render a property widget after every
@@ -26,13 +41,30 @@ interface TreeOps {
 // Renders one nested property value as an editable tree. All persistence goes
 // through `commit`, which receives the full updated top-level value. The
 // widget owns a mutable model and redraws itself after structural changes
-// (add/remove) rather than relying on Obsidian re-rendering.
-export function renderNestedValue(root: HTMLElement, value: unknown, commit: CommitFn): void {
+// (add/remove/rename) rather than relying on Obsidian re-rendering.
+export function renderNestedValue(
+	root: HTMLElement,
+	value: unknown,
+	commit: CommitFn,
+	options: NestedEditorOptions = DEFAULT_OPTIONS
+): void {
 	let model = cloneValue(value);
+	let mode = options.mode;
 	const draw = () => {
 		root.empty();
 		root.addClass("nfp-root");
-		renderNode(root, model, [], ops);
+		if (options.onModeChange) {
+			renderModeSwitch(root, mode, (next) => {
+				mode = next;
+				options.onModeChange?.(next);
+				draw();
+			});
+		}
+		if (mode === "yaml") {
+			renderYaml(root, ops);
+		} else {
+			renderNode(root, model, [], ops);
+		}
 	};
 	const ops: TreeOps = {
 		current: () => model,
@@ -47,6 +79,103 @@ export function renderNestedValue(root: HTMLElement, value: unknown, commit: Com
 		},
 	};
 	draw();
+}
+
+function renderModeSwitch(
+	root: HTMLElement,
+	mode: EditorMode,
+	onPick: (mode: EditorMode) => void
+): void {
+	const next: EditorMode = mode === "tree" ? "yaml" : "tree";
+	const button = root.createEl("button", {
+		cls: "clickable-icon nfp-mode-switch",
+		attr: {
+			"aria-label": next === "yaml" ? "Edit as YAML" : "Edit as rows",
+		},
+	});
+	setIcon(button, next === "yaml" ? "lucide-file-code" : "lucide-list-tree");
+	// Clicking must not move focus: in a table cell or a popover, losing focus
+	// collapses the editor before the click is delivered.
+	button.addEventListener("mousedown", (event) => {
+		event.preventDefault();
+	});
+	button.addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		onPick(next);
+	});
+}
+
+// The whole value as YAML text. Obsidian's own serializer is used in both
+// directions, so what is shown is what would be written to the file.
+function renderYaml(root: HTMLElement, ops: TreeOps): void {
+	const textarea = root.createEl("textarea", { cls: "nfp-yaml" });
+	const errorEl = root.createDiv({ cls: "nfp-yaml-error nfp-hidden" });
+	const serialize = (value: unknown): string => {
+		const text = stringifyYaml(value);
+		return text === "\n" ? "" : text.replace(/\n$/, "");
+	};
+	let committed = serialize(ops.current());
+	textarea.value = committed;
+	const fit = () => {
+		textarea.rows = Math.min(textarea.value.split("\n").length + 1, 20);
+	};
+	fit();
+
+	const commitText = (): boolean => {
+		if (!textarea.isConnected || textarea.value === committed) {
+			return true;
+		}
+		let parsed: unknown;
+		try {
+			// An empty document parses to null; the property's own shape is a
+			// better empty than that, so keep whichever container it had.
+			parsed =
+				textarea.value.trim() === ""
+					? emptyLike(ops.current())
+					: parseYaml(textarea.value);
+		} catch (error) {
+			errorEl.setText(error instanceof Error ? error.message : String(error));
+			errorEl.removeClass("nfp-hidden");
+			return false;
+		}
+		errorEl.addClass("nfp-hidden");
+		committed = textarea.value;
+		ops.scalar(parsed);
+		return true;
+	};
+
+	textarea.addEventListener("input", fit);
+	textarea.addEventListener("blur", () => {
+		commitText();
+	});
+	textarea.addEventListener("keydown", (event) => {
+		// Enter is a newline here, so committing needs its own chord. Both are
+		// stopped from reaching Obsidian's metadata-editor keymap.
+		if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (commitText()) {
+				textarea.blur();
+			}
+		} else if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			textarea.value = committed;
+			errorEl.addClass("nfp-hidden");
+			fit();
+			textarea.blur();
+		} else if (event.key === "Enter") {
+			event.stopPropagation();
+		}
+	});
+}
+
+function emptyLike(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return [];
+	}
+	return isPlainObject(value) ? {} : null;
 }
 
 function renderNode(el: HTMLElement, node: unknown, path: Path, ops: TreeOps): void {
@@ -68,7 +197,7 @@ function renderObject(
 	const container = el.createDiv({ cls: "nfp-object" });
 	for (const [key, value] of Object.entries(node)) {
 		const row = container.createDiv({ cls: "nfp-row" });
-		row.createSpan({ cls: "nfp-key", text: key });
+		renderKey(row, key, [...path, key], ops);
 		const valueEl = row.createDiv({ cls: "nfp-value" });
 		renderNode(valueEl, value, [...path, key], ops);
 		addRemoveButton(row, [...path, key], ops);
@@ -101,6 +230,54 @@ function renderObject(
 			});
 			input.focus();
 		});
+	});
+}
+
+// An object key, editable in place. Renaming rebuilds the object to keep key
+// order, so it is a structural change and the tree redraws under it.
+function renderKey(row: HTMLElement, key: string, path: Path, ops: TreeOps): void {
+	const input = row.createEl("input", {
+		cls: "nfp-key nfp-key-input",
+		type: "text",
+	});
+	input.value = key;
+	const fit = () => {
+		input.size = Math.max(input.value.length, 1);
+	};
+	fit();
+	input.addEventListener("input", fit);
+
+	const commitKey = () => {
+		if (!input.isConnected) {
+			return;
+		}
+		const next = input.value.trim();
+		const parent = getAtPath(ops.current(), path.slice(0, -1));
+		// An empty or colliding name would silently drop a value; refuse it
+		// and hand the field back rather than guessing at an alternative.
+		if (next === "" || (next !== key && isPlainObject(parent) && next in parent)) {
+			input.value = key;
+			fit();
+			return;
+		}
+		if (next !== key) {
+			ops.structural(renameKey(ops.current(), path, next));
+		}
+	};
+
+	input.addEventListener("blur", commitKey);
+	input.addEventListener("keydown", (event) => {
+		if (event.key === "Enter") {
+			event.preventDefault();
+			event.stopPropagation();
+			input.blur();
+		} else if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			input.value = key;
+			fit();
+			input.blur();
+		}
 	});
 }
 
@@ -241,7 +418,15 @@ function appendKindButtons(
 			attr: { "aria-label": kind.label },
 		});
 		setIcon(button, kind.icon);
-		button.addEventListener("click", () => {
+		// macOS does not focus a button on mousedown, so without this the key
+		// input blurs to nothing, focusout tears the form down, and the click
+		// never lands: the form appeared to close instead of adding anything.
+		button.addEventListener("mousedown", (event) => {
+			event.preventDefault();
+		});
+		button.addEventListener("click", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
 			submit(kind.make);
 		});
 	}
@@ -253,6 +438,11 @@ function createAddButton(container: HTMLElement, label: string): HTMLElement {
 	const button = container.createDiv({ cls: "metadata-add-button text-icon-button nfp-add" });
 	setIcon(button.createSpan({ cls: "text-button-icon" }), "lucide-plus");
 	button.createSpan({ cls: "text-button-label", text: label });
+	// Keep the click from blurring whatever holds the editor open — a hover
+	// popover or a focused table cell closes the moment focus leaves it.
+	button.addEventListener("mousedown", (event) => {
+		event.preventDefault();
+	});
 	return button;
 }
 
@@ -267,7 +457,9 @@ function addRemoveButton(row: HTMLElement, path: Path, ops: TreeOps): void {
 	button.addEventListener("mousedown", (event) => {
 		event.preventDefault();
 	});
-	button.addEventListener("click", () => {
+	button.addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
 		ops.structural(removeAtPath(ops.current(), path));
 	});
 }
