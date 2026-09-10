@@ -131,9 +131,15 @@ document.body.appendChild(td);
 widget.render(cellEl, value, { key: "build", sourcePath: "x.md", onChange() {} });
 check("cell shows a one-line summary at rest", cellEl.querySelector(".nfp-cell-summary")?.textContent, "cost: {energy: 800}, time: 25, requires: []");
 check("cell does not draw the editor before focus", cellEl.querySelector(".nfp-root") !== null, false);
+// The editor element exists from the start and is toggled with `hidden`.
+// Rebuilding it on focus races the focus change that triggers it, and the
+// cell ends up half-drawn with its rows shrunk to nothing.
+check("cell keeps a hidden editor rather than rebuilding", cellEl.querySelector(".nfp-cell-editor")?.hidden, true);
 
-cellEl.querySelector(".nfp-cell-summary").dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+const openEvent = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+cellEl.querySelector(".nfp-cell-summary").dispatchEvent(openEvent);
 check("cell opens the editor on mousedown", cellEl.querySelector(".nfp-root") !== null, true);
+check("opening click suppresses its default focus", openEvent.defaultPrevented, true);
 check("expanded cell has editable keys", Array.from(cellEl.querySelectorAll(".nfp-key")).map((e) => e.value), ["cost", "energy", "time", "requires"]);
 
 const panel = document.createElement("div");

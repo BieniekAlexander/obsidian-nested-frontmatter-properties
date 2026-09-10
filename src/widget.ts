@@ -58,6 +58,10 @@ export function renderNestedValue(
 				mode = next;
 				options.onModeChange?.(next);
 				draw();
+				// The redraw removes whatever held focus. In a table cell that
+				// reads as focus leaving, which closes the cell — so the new
+				// editor takes focus straight away.
+				focusFirstField(root);
 			});
 		}
 		if (mode === "yaml") {
@@ -79,6 +83,14 @@ export function renderNestedValue(
 		},
 	};
 	draw();
+}
+
+// The first thing a freshly drawn editor should hand focus to.
+export function focusFirstField(root: HTMLElement): void {
+	const field = root.querySelector<HTMLElement>(
+		"textarea, input:not([type='checkbox']), input, button"
+	);
+	field?.focus();
 }
 
 function renderModeSwitch(

@@ -215,13 +215,10 @@
 	min-width: 0;
 }
 
-/* Obsidian clamps a non-multiline table to one line and hides overflow; an
-   expanded cell has to opt out of both or the editor is clipped to the same
-   row height it was drawn to escape. */
-.bases-td:focus-within {
-	overflow: visible;
-}
-
+/* Obsidian already grows a focused cell to `height: fit-content`, so the
+   editor is not clipped vertically; its own `overflow: hidden` must stay, or
+   an expanded cell bleeds over the rows beneath it. Only the one-line clamp
+   has to be lifted. */
 .bases-td:focus-within .nfp-cell,
 .bases-td:focus-within .nfp-root {
 	white-space: normal;
