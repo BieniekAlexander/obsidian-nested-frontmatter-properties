@@ -99,12 +99,14 @@ export function renderNestedValue(
 	return { redraw: draw };
 }
 
-// The first thing a freshly drawn editor should hand focus to.
+// The first thing a freshly drawn editor should hand focus to. In a table
+// cell the editor is clamped to zero height until this focus lands, so the
+// scroll a focus normally triggers would yank the table; suppress it.
 export function focusFirstField(root: HTMLElement): void {
 	const field = root.querySelector<HTMLElement>(
 		"textarea, input:not([type='checkbox']), input, button"
 	);
-	field?.focus();
+	field?.focus({ preventScroll: true });
 }
 
 function renderModeSwitch(

@@ -180,18 +180,22 @@
    only then — which is also when Obsidian's own `height: fit-content` kicks
    in and gives it the room. */
 .nfp-cell {
-	display: flex;
+	display: block;
 	width: 100%;
 	min-width: 0;
 }
 
 /* Exactly one of the summary and the editor is shown, chosen by the same
-   :focus-within that grows the cell. No JS state to fall out of step with. */
+   :focus-within that grows the cell. No JS state to fall out of step with.
+   The editor is CLAMPED rather than `display: none`, because the click that
+   opens the cell works by focusing a field inside it — and nothing in a
+   `display: none` subtree can take focus, so :focus-within could never become
+   true and the cell would never open at all. Zero height with the overflow
+   hidden keeps it invisible while leaving it focusable. */
 .nfp-cell-summary {
 	display: block;
 	color: var(--text-normal);
 	cursor: text;
-	flex-grow: 1;
 	min-width: 0;
 	overflow: hidden;
 	padding: 0 var(--size-2-2);
@@ -210,7 +214,9 @@
 }
 
 .nfp-cell-editor {
-	display: none;
+	display: block;
+	height: 0;
+	overflow: hidden;
 	width: 100%;
 	min-width: 0;
 }
@@ -220,7 +226,8 @@
 }
 
 .bases-td:focus-within .nfp-cell-editor {
-	display: block;
+	height: auto;
+	overflow: visible;
 }
 
 .bases-td:focus-within .nfp-cell {
