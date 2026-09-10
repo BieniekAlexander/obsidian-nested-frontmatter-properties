@@ -275,3 +275,41 @@ describe("add-form buttons hold focus", () => {
 		expect(event.defaultPrevented).toBe(true);
 	});
 });
+
+describe("the editor mode is one global preference", () => {
+	// Obsidian renders every visible cell up front, so an editor that captured
+	// the mode at render time keeps drawing in whichever mode was current when
+	// the table was built — the mode has to be read at each draw instead.
+	it("reads the mode at every draw rather than capturing it", () => {
+		let mode: "tree" | "yaml" = "tree";
+		root = document.createElement("div");
+		document.body.appendChild(root);
+		const handle = renderNestedValue(root, { a: 1 }, () => undefined, {
+			mode: () => mode,
+		});
+		expect(root.querySelector("textarea")).toBeNull();
+
+		mode = "yaml";
+		handle.redraw();
+		expect(root.querySelector("textarea")).not.toBeNull();
+	});
+
+	it("reports a switch through setMode instead of keeping it locally", () => {
+		let mode: "tree" | "yaml" = "tree";
+		root = document.createElement("div");
+		document.body.appendChild(root);
+		renderNestedValue(root, { a: 1 }, () => undefined, {
+			mode: () => mode,
+			setMode: (next) => {
+				mode = next;
+			},
+		});
+		click(root.querySelector(".nfp-mode-switch"));
+		expect(mode).toBe("yaml");
+	});
+
+	it("draws no mode switch when the caller cannot store the choice", () => {
+		render({ a: 1 });
+		expect(root.querySelector(".nfp-mode-switch")).toBeNull();
+	});
+});

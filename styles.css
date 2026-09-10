@@ -185,7 +185,10 @@
 	min-width: 0;
 }
 
+/* Exactly one of the summary and the editor is shown, chosen by the same
+   :focus-within that grows the cell. No JS state to fall out of step with. */
 .nfp-cell-summary {
+	display: block;
 	color: var(--text-normal);
 	cursor: text;
 	flex-grow: 1;
@@ -206,13 +209,22 @@
 	outline: none;
 }
 
-.nfp-cell.is-expanded {
-	padding: var(--size-2-2);
-}
-
 .nfp-cell-editor {
+	display: none;
 	width: 100%;
 	min-width: 0;
+}
+
+.bases-td:focus-within .nfp-cell-summary {
+	display: none;
+}
+
+.bases-td:focus-within .nfp-cell-editor {
+	display: block;
+}
+
+.bases-td:focus-within .nfp-cell {
+	padding: var(--size-2-2);
 }
 
 /* Obsidian already grows a focused cell to `height: fit-content`, so the
@@ -232,6 +244,6 @@
 
 /* The cell's own background must be opaque: an expanded editor is drawn over
    the rows beneath it. */
-.bases-td:focus-within .nfp-cell.is-expanded {
+.bases-td:focus-within .nfp-cell {
 	background-color: var(--bases-table-cell-background-active, var(--background-primary));
 }

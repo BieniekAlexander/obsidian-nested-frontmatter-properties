@@ -15,19 +15,29 @@ import {
 
 export type CommitFn = (value: unknown) => void;
 
-// "tree" draws one row per key; "yaml" hands the whole value over as text.
-// Text editing is the escape hatch for shapes the row editor is clumsy at —
-// reordering keys, pasting a block in from elsewhere.
+// "tree" draws one row per key — the document-style editor, and the default.
+// "yaml" hands the whole value over as text, the escape hatch for shapes the
+// row editor is clumsy at: reordering keys, pasting a block in from elsewhere.
 export type EditorMode = "tree" | "yaml";
 
 export interface NestedEditorOptions {
-	mode: EditorMode;
+	// Read at every draw rather than captured once. The mode is one global
+	// preference, not a per-cell state: Obsidian renders every visible cell
+	// up front, so a captured value leaves every OTHER cell drawing in
+	// whichever mode was current when the table was built.
+	mode(): EditorMode;
 	// When set, the editor draws a mode switch and reports the user's choice
-	// so the caller can remember it.
-	onModeChange?: (mode: EditorMode) => void;
+	// so the caller can store it.
+	setMode?(mode: EditorMode): void;
 }
 
-const DEFAULT_OPTIONS: NestedEditorOptions = { mode: "tree" };
+// A drawn editor, so a caller holding one can ask it to redraw when the
+// global mode changed underneath it.
+export interface NestedEditorHandle {
+	redraw(): void;
+}
+
+const DEFAULT_OPTIONS: NestedEditorOptions = { mode: () => "tree" };
 
 // Handlers must read and write through these, never through render-time
 // snapshots: Obsidian does not re-render a property widget after every
@@ -47,16 +57,15 @@ export function renderNestedValue(
 	value: unknown,
 	commit: CommitFn,
 	options: NestedEditorOptions = DEFAULT_OPTIONS
-): void {
+): NestedEditorHandle {
 	let model = cloneValue(value);
-	let mode = options.mode;
 	const draw = () => {
+		const mode = options.mode();
 		root.empty();
 		root.addClass("nfp-root");
-		if (options.onModeChange) {
+		if (options.setMode) {
 			renderModeSwitch(root, mode, (next) => {
-				mode = next;
-				options.onModeChange?.(next);
+				options.setMode?.(next);
 				draw();
 				// The redraw removes whatever held focus. In a table cell that
 				// reads as focus leaving, which closes the cell — so the new
@@ -80,9 +89,14 @@ export function renderNestedValue(
 			model = next;
 			commit(model);
 			draw();
+			// The redraw removes whatever held focus. Inside a table cell that
+			// drops :focus-within, which clips the editor back to one row, so
+			// the new drawing takes focus.
+			focusFirstField(root);
 		},
 	};
 	draw();
+	return { redraw: draw };
 }
 
 // The first thing a freshly drawn editor should hand focus to.
@@ -102,7 +116,7 @@ function renderModeSwitch(
 	const button = root.createEl("button", {
 		cls: "clickable-icon nfp-mode-switch",
 		attr: {
-			"aria-label": next === "yaml" ? "Edit as YAML" : "Edit as rows",
+			"aria-label": next === "yaml" ? "Edit as YAML" : "Edit as document",
 		},
 	});
 	setIcon(button, next === "yaml" ? "lucide-file-code" : "lucide-list-tree");

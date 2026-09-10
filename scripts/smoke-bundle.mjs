@@ -119,6 +119,7 @@ await plugin.onload();
 check("onload registers a settings tab", plugin.settingTabAdded === true, true);
 layoutReady();
 check("registers both widgets", Object.keys(widgets), ["nested-frontmatter:object", "nested-frontmatter:list"]);
+check("default editor mode is the document view", plugin.settings.editorMode, "tree");
 
 // Render the object widget into a fake Bases table cell and into a panel.
 const widget = widgets["nested-frontmatter:object"];
@@ -134,13 +135,49 @@ check("cell does not draw the editor before focus", cellEl.querySelector(".nfp-r
 // The editor element exists from the start and is toggled with `hidden`.
 // Rebuilding it on focus races the focus change that triggers it, and the
 // cell ends up half-drawn with its rows shrunk to nothing.
-check("cell keeps a hidden editor rather than rebuilding", cellEl.querySelector(".nfp-cell-editor")?.hidden, true);
+// Which of summary/editor shows is CSS's job; JS only fills the editor in on
+// demand, so before focus it exists and is empty.
+check("cell holds an empty editor until it is opened", cellEl.querySelector(".nfp-cell-editor")?.childElementCount, 0);
 
 const openEvent = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
 cellEl.querySelector(".nfp-cell-summary").dispatchEvent(openEvent);
 check("cell opens the editor on mousedown", cellEl.querySelector(".nfp-root") !== null, true);
 check("opening click suppresses its default focus", openEvent.defaultPrevented, true);
 check("expanded cell has editable keys", Array.from(cellEl.querySelectorAll(".nfp-key")).map((e) => e.value), ["cost", "energy", "time", "requires"]);
+
+// The mode is one global preference. Obsidian renders every visible cell up
+// front, so a cell built BEFORE a switch elsewhere is exactly the case that
+// used to keep drawing in the old mode.
+const td2 = document.createElement("div");
+td2.classList.add("bases-td");
+const cell2 = td2.createDiv({ cls: "bases-table-cell bases-metadata-value" });
+document.body.appendChild(td2);
+widget.render(cell2, value, { key: "build", sourcePath: "y.md", onChange() {} });
+
+cellEl.querySelector(".nfp-mode-switch").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+check("a mode switch is remembered globally", plugin.settings.editorMode, "yaml");
+check("the switched cell redraws as YAML", cellEl.querySelector("textarea") !== null, true);
+
+cell2.querySelector(".nfp-cell-summary").dispatchEvent(
+	new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+);
+check("a cell built before the switch opens in the new mode", cell2.querySelector("textarea") !== null, true);
+
+// A third cell, also built while the mode was YAML, to check the switch
+// carries in both directions.
+const td3 = document.createElement("div");
+td3.classList.add("bases-td");
+const cell3 = td3.createDiv({ cls: "bases-table-cell bases-metadata-value" });
+document.body.appendChild(td3);
+widget.render(cell3, value, { key: "build", sourcePath: "z.md", onChange() {} });
+
+cell2.querySelector(".nfp-mode-switch").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+check("switching back is global too", plugin.settings.editorMode, "tree");
+
+cell3.querySelector(".nfp-cell-summary").dispatchEvent(
+	new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+);
+check("and a later cell opens as a document again", cell3.querySelector("textarea") === null, true);
 
 const panel = document.createElement("div");
 document.body.appendChild(panel);

@@ -39,11 +39,11 @@ export class NestedFrontmatterSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Editor style")
 			.setDesc(
-				"How nested values are edited. Rows gives one field per key; YAML text edits the whole value as plain text."
+				"How nested values are edited, everywhere they appear. Document gives one field per key; YAML text edits the whole value as plain text. The switch on an editor changes this too."
 			)
 			.addDropdown((dropdown) => {
 				dropdown
-					.addOption("tree", "Rows")
+					.addOption("tree", "Document")
 					.addOption("yaml", "YAML text")
 					.setValue(this.host.settings.editorMode)
 					.onChange(async (value) => {

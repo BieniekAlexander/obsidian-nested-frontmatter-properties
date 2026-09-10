@@ -90,19 +90,21 @@ when Obsidian's own `height: fit-content` gives it the room.
 
 - Object keys are editable in place; renaming rebuilds the object so key order
   is preserved.
-- A mode switch on the editor swaps the row editor for a YAML text area over
-  the whole value, for the shapes rows are clumsy at — reordering keys,
-  pasting a block in from elsewhere. Obsidian's own `parseYaml` /
+- A mode switch on the editor swaps the document-style rows for a YAML text
+  area over the whole value, for the shapes rows are clumsy at — reordering
+  keys, pasting a block in from elsewhere. Obsidian's own `parseYaml` /
   `stringifyYaml` do the work, so no YAML library is bundled and what is shown
-  is what would be written.
+  is what would be written. The mode is one preference shared by every editor,
+  not per-cell state, and it defaults to the document view.
 - Fixed: on macOS a mousedown on a `<button>` does not focus it, so the
   add-property form's key input blurred to nothing, `focusout` tore the form
   down, and the click landed on a detached node — the form appeared to close
   without adding anything. The kind buttons and the add button now suppress
   their own mousedown, as the remove button already did.
 
-A settings tab carries the editor style, an off switch for the Bases
-integration, and how deep the offered column paths go.
+A settings tab carries the editor style (the same preference the switch
+writes), an off switch for the Bases integration, and how deep the offered
+column paths go.
 
 ### Building this fork
 

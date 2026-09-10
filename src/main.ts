@@ -169,11 +169,15 @@ export default class NestedFrontmatterPropertiesPlugin extends Plugin {
 				const commit = (newValue: unknown) => {
 					this.commit(newValue, ctx);
 				};
-				const onModeChange = (mode: EditorMode) => {
-					this.settings.editorMode = mode;
-					void this.saveSettings();
+				// The mode is one preference shared by every cell, read fresh at
+				// each draw so a switch in one cell reaches the others.
+				const options = {
+					mode: (): EditorMode => this.settings.editorMode,
+					setMode: (mode: EditorMode) => {
+						this.settings.editorMode = mode;
+						void this.saveSettings();
+					},
 				};
-				const options = { mode: this.settings.editorMode, onModeChange };
 				// A table cell is one row tall and clips; it gets a summary
 				// that opens into the editor rather than the editor itself.
 				if (isTableCell(el)) {
