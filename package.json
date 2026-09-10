@@ -6,12 +6,13 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && node scripts/check-bundle.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && node scripts/check-bundle.mjs && node scripts/smoke-bundle.mjs",
 		"check-bundle": "node scripts/check-bundle.mjs",
 		"lint": "eslint src/",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"version": "node version-bump.mjs && git add manifest.json versions.json"
+		"version": "node version-bump.mjs && git add manifest.json versions.json",
+		"test:bundle": "node scripts/smoke-bundle.mjs"
 	},
 	"keywords": [],
 	"license": "MIT",
