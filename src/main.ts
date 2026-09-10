@@ -1,7 +1,14 @@
 import { MarkdownView, Plugin } from "obsidian";
 import { around } from "monkey-around";
+import { installBasesNestedProperties, type BasesOptions } from "./bases";
+import { isTableCell, renderNestedCell } from "./cell";
 import { isNestedValue, isPlainObject } from "./detect";
-import { renderNestedValue } from "./widget";
+import {
+	DEFAULT_SETTINGS,
+	NestedFrontmatterSettingTab,
+	type NestedFrontmatterSettings,
+} from "./settings";
+import { renderNestedValue, type EditorMode } from "./widget";
 import type {
 	AppWithInternals,
 	MarkdownViewWithMetadataEditor,
@@ -17,11 +24,59 @@ import type {
 export const OBJECT_WIDGET_TYPE = "nested-frontmatter:object";
 export const LIST_WIDGET_TYPE = "nested-frontmatter:list";
 
+// Files sampled when collecting nested paths for the property menu. The union
+// of frontmatter shapes converges long before a large vault is exhausted.
+const MAX_FILES_SCANNED = 500;
+// Ceiling on nested paths offered as columns, so wide frontmatter cannot
+// flood the menu.
+const MAX_NESTED_PATHS = 300;
+
 export default class NestedFrontmatterPropertiesPlugin extends Plugin {
-	onload(): void {
+	settings: NestedFrontmatterSettings = { ...DEFAULT_SETTINGS };
+	private uninstallBases: (() => void) | null = null;
+
+	async onload(): Promise<void> {
+		await this.loadSettings();
+		this.addSettingTab(new NestedFrontmatterSettingTab(this.app, this));
+		this.register(() => {
+			this.uninstallBases?.();
+			this.uninstallBases = null;
+		});
 		this.app.workspace.onLayoutReady(() => {
 			this.install();
+			this.refreshBasesIntegration();
 		});
+	}
+
+	async loadSettings(): Promise<void> {
+		const stored = (await this.loadData()) as Partial<NestedFrontmatterSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
+	}
+
+	async saveSettings(): Promise<void> {
+		await this.saveData(this.settings);
+	}
+
+	// Bases integration is a user switch, so it installs and uninstalls
+	// independently of plugin load.
+	refreshBasesIntegration(): void {
+		const wanted = this.settings.nestedBasesProperties;
+		if (wanted === (this.uninstallBases !== null)) {
+			return;
+		}
+		if (!wanted) {
+			this.uninstallBases?.();
+			this.uninstallBases = null;
+			return;
+		}
+		this.uninstallBases = installBasesNestedProperties(
+			this.app,
+			(): BasesOptions => ({
+				maxDepth: this.settings.nestedDepth,
+				maxPaths: MAX_NESTED_PATHS,
+				maxFilesScanned: MAX_FILES_SCANNED,
+			})
+		);
 	}
 
 	private install(): void {
@@ -111,9 +166,25 @@ export default class NestedFrontmatterPropertiesPlugin extends Plugin {
 				// :focus-within; tag our rows so styles.css can neutralize
 				// that and leave focus feedback to the individual field.
 				el.closest(".metadata-property")?.classList.add("nfp-property");
-				renderNestedValue(el, usable, (newValue) => {
+				const commit = (newValue: unknown) => {
 					this.commit(newValue, ctx);
-				});
+				};
+				// The mode is one preference shared by every cell, read fresh at
+				// each draw so a switch in one cell reaches the others.
+				const options = {
+					mode: (): EditorMode => this.settings.editorMode,
+					setMode: (mode: EditorMode) => {
+						this.settings.editorMode = mode;
+						void this.saveSettings();
+					},
+				};
+				// A table cell is one row tall and clips; it gets a summary
+				// that opens into the editor rather than the editor itself.
+				if (isTableCell(el)) {
+					renderNestedCell(el, usable, commit, options);
+				} else {
+					renderNestedValue(el, usable, commit, options);
+				}
 				return {
 					focus: () => {
 						el.focus();

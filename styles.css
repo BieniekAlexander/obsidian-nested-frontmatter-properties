@@ -116,3 +116,141 @@
 .nfp-kind-btn {
 	padding: var(--size-2-1);
 }
+
+/* --- Editable object keys ------------------------------------------------
+   The key reads as a label until it is focused, at which point it takes the
+   same form-field treatment as a value. `size` is set from the text length in
+   JS so the field is exactly as wide as the name it holds. */
+.nfp-root input.nfp-key-input {
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	border-radius: var(--radius-s);
+	color: var(--metadata-label-text-color, var(--text-muted));
+	font-family: inherit;
+	font-size: inherit;
+	height: auto;
+	min-width: 2ch;
+	padding: 0 var(--size-2-1);
+	width: auto;
+}
+
+.nfp-root input.nfp-key-input:hover {
+	background: var(--background-modifier-hover);
+}
+
+.nfp-root input.nfp-key-input:focus {
+	background: var(--background-modifier-form-field);
+	box-shadow: 0 0 0 1px var(--background-modifier-border-focus);
+	color: var(--text-normal);
+}
+
+/* --- YAML mode ---------------------------------------------------------- */
+.nfp-mode-switch {
+	align-self: flex-end;
+	margin-left: auto;
+	padding: var(--size-2-1);
+}
+
+.nfp-root textarea.nfp-yaml {
+	width: 100%;
+	background: var(--background-modifier-form-field);
+	border-radius: var(--radius-s);
+	color: var(--text-normal);
+	font-family: var(--font-monospace);
+	font-size: var(--font-smaller);
+	line-height: var(--line-height-tight);
+	min-height: calc(var(--line-height-tight) * 2em);
+	padding: var(--size-2-2);
+	resize: vertical;
+	tab-size: 2;
+	white-space: pre;
+}
+
+.nfp-yaml-error {
+	color: var(--text-error);
+	font-size: var(--font-smallest);
+	padding: var(--size-2-1) var(--size-2-2);
+}
+
+/* --- Bases table cells ---------------------------------------------------
+   A `.bases-td` is one row tall with `overflow: hidden` and only grows while
+   something inside it holds focus, so the stacked tree is unreadable at rest.
+   The cell shows a single-line summary until it is focused, and the editor
+   only then — which is also when Obsidian's own `height: fit-content` kicks
+   in and gives it the room. */
+.nfp-cell {
+	display: block;
+	width: 100%;
+	min-width: 0;
+}
+
+/* Exactly one of the summary and the editor is shown, chosen by the same
+   :focus-within that grows the cell. No JS state to fall out of step with.
+   The editor is CLAMPED rather than `display: none`, because the click that
+   opens the cell works by focusing a field inside it — and nothing in a
+   `display: none` subtree can take focus, so :focus-within could never become
+   true and the cell would never open at all. Zero height with the overflow
+   hidden keeps it invisible while leaving it focusable. */
+.nfp-cell-summary {
+	display: block;
+	color: var(--text-normal);
+	cursor: text;
+	min-width: 0;
+	overflow: hidden;
+	padding: 0 var(--size-2-2);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.nfp-cell-summary.is-empty {
+	color: var(--text-faint);
+}
+
+.nfp-cell-summary:focus-visible {
+	box-shadow: 0 0 0 1px var(--background-modifier-border-focus);
+	border-radius: var(--radius-s);
+	outline: none;
+}
+
+.nfp-cell-editor {
+	display: block;
+	height: 0;
+	overflow: hidden;
+	width: 100%;
+	min-width: 0;
+}
+
+.bases-td:focus-within .nfp-cell-summary {
+	display: none;
+}
+
+.bases-td:focus-within .nfp-cell-editor {
+	height: auto;
+	overflow: visible;
+}
+
+.bases-td:focus-within .nfp-cell {
+	padding: var(--size-2-2);
+}
+
+/* Obsidian already grows a focused cell to `height: fit-content`, so the
+   editor is not clipped vertically; its own `overflow: hidden` must stay, or
+   an expanded cell bleeds over the rows beneath it. Only the one-line clamp
+   has to be lifted. */
+.bases-td:focus-within .nfp-cell,
+.bases-td:focus-within .nfp-root {
+	white-space: normal;
+	align-items: flex-start;
+}
+
+.bases-td:focus-within .bases-table-cell {
+	height: auto;
+	align-items: flex-start;
+}
+
+/* The cell's own background must be opaque: an expanded editor is drawn over
+   the rows beneath it. */
+.bases-td:focus-within .nfp-cell {
+	background-color: var(--bases-table-cell-background-active, var(--background-primary));
+}

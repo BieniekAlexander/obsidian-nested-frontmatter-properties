@@ -62,6 +62,9 @@ const render = (value: unknown) => {
 	renderNestedValue(root, value, (v) => commits.push(structuredClone(v)));
 };
 
+const keyNames = (scope: Element): string[] =>
+	Array.from(scope.querySelectorAll<HTMLInputElement>(".nfp-key")).map((el) => el.value);
+
 const click = (el: Element | null) => {
 	expect(el).not.toBeNull();
 	(el as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -98,7 +101,7 @@ describe("adding properties", () => {
 		render({});
 		addProperty(root, "title");
 		expect(commits).toEqual([{ title: "" }]);
-		expect(root.querySelector(".nfp-key")?.textContent).toBe("title");
+		expect(keyNames(root)).toEqual(["title"]);
 	});
 
 	it("adds an object property, then a property inside it", () => {
@@ -111,8 +114,7 @@ describe("adding properties", () => {
 		expect(nested).not.toBeNull();
 		addProperty(nested!, "mode");
 		expect(commits[1]).toEqual({ config: { mode: "" } });
-		const keys = Array.from(root.querySelectorAll(".nfp-key")).map((el) => el.textContent);
-		expect(keys).toEqual(["config", "mode"]);
+		expect(keyNames(root)).toEqual(["config", "mode"]);
 	});
 
 	it("adds a list property and an object item inside it", () => {
@@ -163,8 +165,7 @@ describe("removing properties", () => {
 		render({ title: "x", count: 2 });
 		click(root.querySelector(".nfp-remove"));
 		expect(commits).toEqual([{ count: 2 }]);
-		const keys = Array.from(root.querySelectorAll(".nfp-key")).map((el) => el.textContent);
-		expect(keys).toEqual(["count"]);
+		expect(keyNames(root)).toEqual(["count"]);
 	});
 
 	it("removes an array item", () => {
@@ -185,7 +186,7 @@ describe("removing properties", () => {
 describe("editing values after structural changes", () => {
 	it("scalar edit then removal keeps the edit", () => {
 		render({ a: "old", b: "keep" });
-		const input = root.querySelector<HTMLInputElement>('input[type="text"]');
+		const input = root.querySelector<HTMLInputElement>('.nfp-value input[type="text"]');
 		input!.value = "new";
 		input!.dispatchEvent(new FocusEvent("blur"));
 		expect(commits[0]).toEqual({ a: "new", b: "keep" });
@@ -194,5 +195,121 @@ describe("editing values after structural changes", () => {
 		const removes = root.querySelectorAll(".nfp-remove");
 		click(removes[1] ?? null);
 		expect(commits[1]).toEqual({ a: "new" });
+	});
+});
+
+describe("renaming object keys", () => {
+	const renameFirstKey = (to: string) => {
+		const key = root.querySelector<HTMLInputElement>(".nfp-key")!;
+		key.value = to;
+		key.dispatchEvent(new FocusEvent("blur"));
+		return key;
+	};
+
+	it("renames a key and keeps its value and position", () => {
+		render({ a: 1, b: 2 });
+		renameFirstKey("alpha");
+		expect(commits).toEqual([{ alpha: 1, b: 2 }]);
+		expect(keyNames(root)).toEqual(["alpha", "b"]);
+	});
+
+	it("renames a nested key without disturbing its siblings", () => {
+		render({ build: { time: 25, cost: 3 } });
+		const nestedKey = root.querySelectorAll<HTMLInputElement>(".nfp-key")[1]!;
+		nestedKey.value = "seconds";
+		nestedKey.dispatchEvent(new FocusEvent("blur"));
+		expect(commits).toEqual([{ build: { seconds: 25, cost: 3 } }]);
+	});
+
+	it("refuses a name already taken by a sibling", () => {
+		render({ a: 1, b: 2 });
+		const key = renameFirstKey("b");
+		expect(commits).toEqual([]);
+		expect(key.value).toBe("a");
+	});
+
+	it("refuses an empty name", () => {
+		render({ a: 1 });
+		const key = renameFirstKey("   ");
+		expect(commits).toEqual([]);
+		expect(key.value).toBe("a");
+	});
+
+	it("reverts on Escape without committing", () => {
+		render({ a: 1 });
+		const key = root.querySelector<HTMLInputElement>(".nfp-key")!;
+		key.value = "zzz";
+		key.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })
+		);
+		expect(key.value).toBe("a");
+		expect(commits).toEqual([]);
+	});
+});
+
+describe("add-form buttons hold focus", () => {
+	// On macOS a mousedown on a <button> does not focus it, so without
+	// preventDefault the key input blurs to nothing, focusout tears the form
+	// down, and the click lands on a detached node: the form appears to close
+	// without adding anything.
+	it("suppresses the default mousedown on kind buttons", () => {
+		render({});
+		click(
+			Array.from(root.querySelectorAll(".nfp-add")).find((el) =>
+				el.textContent?.includes("Add property")
+			) ?? null
+		);
+		const button = root.querySelector<HTMLElement>('.nfp-add-form [aria-label="Add object"]')!;
+		const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+		button.dispatchEvent(event);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it("suppresses the default mousedown on the add button itself", () => {
+		render({});
+		const addButton = Array.from(root.querySelectorAll(".nfp-add")).find((el) =>
+			el.textContent?.includes("Add property")
+		) as HTMLElement;
+		const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+		addButton.dispatchEvent(event);
+		expect(event.defaultPrevented).toBe(true);
+	});
+});
+
+describe("the editor mode is one global preference", () => {
+	// Obsidian renders every visible cell up front, so an editor that captured
+	// the mode at render time keeps drawing in whichever mode was current when
+	// the table was built — the mode has to be read at each draw instead.
+	it("reads the mode at every draw rather than capturing it", () => {
+		let mode: "tree" | "yaml" = "tree";
+		root = document.createElement("div");
+		document.body.appendChild(root);
+		const handle = renderNestedValue(root, { a: 1 }, () => undefined, {
+			mode: () => mode,
+		});
+		expect(root.querySelector("textarea")).toBeNull();
+
+		mode = "yaml";
+		handle.redraw();
+		expect(root.querySelector("textarea")).not.toBeNull();
+	});
+
+	it("reports a switch through setMode instead of keeping it locally", () => {
+		let mode: "tree" | "yaml" = "tree";
+		root = document.createElement("div");
+		document.body.appendChild(root);
+		renderNestedValue(root, { a: 1 }, () => undefined, {
+			mode: () => mode,
+			setMode: (next) => {
+				mode = next;
+			},
+		});
+		click(root.querySelector(".nfp-mode-switch"));
+		expect(mode).toBe("yaml");
+	});
+
+	it("draws no mode switch when the caller cannot store the choice", () => {
+		render({ a: 1 });
+		expect(root.querySelector(".nfp-mode-switch")).toBeNull();
 	});
 });
